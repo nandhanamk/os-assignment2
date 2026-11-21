@@ -1,0 +1,488 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OS Scheduling Visualizer</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    font-family: Arial, sans-serif;
+    background: #eaf4f4;
+    margin: 0;
+    padding: 20px;
+    color: #34495e;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+}
+
+h1, h2 {
+    text-align: center;
+    color: #416b75;
+}
+
+.card {
+    background: #ffffff;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 15px;
+    box-shadow: 0 3px 12px #ccdcdc;
+}
+
+input, select, button {
+    padding: 10px;
+    margin: 6px 3px;
+    border: 1px solid #b5cccc;
+    border-radius: 7px;
+    font-size: 14px;
+}
+
+button {
+    background: #83b9b5;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover { background: #619b98; }
+
+canvas {
+    width: 100%;
+    margin-top: 15px;
+}
+
+.result {
+    background: #eff8f5;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 12px;
+    overflow-wrap: anywhere;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+th, td {
+    border: 1px solid #cbdada;
+    padding: 9px;
+    text-align: center;
+}
+
+th { background: #d8ece9; }
+
+.bar {
+    height: 28px;
+    background: #86bcb6;
+    margin: 8px 0;
+    color: white;
+    text-align: right;
+    padding-right: 8px;
+    border-radius: 5px;
+}
+
+#steps {
+    font-size: 18px;
+    font-weight: bold;
+    color: #416b75;
+}
+
+.process {
+    display: inline-block;
+    background: #d9eeee;
+    padding: 12px;
+    margin: 4px;
+    border-radius: 6px;
+}
+
+@media(max-width:600px) {
+    input, select { width: 100%; }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>OS Scheduling Visualizer</h1>
+<p style="text-align:center">Operating System Disk and CPU Scheduling Algorithms</p>
+
+<!-- DISK SCHEDULING -->
+<div class="card">
+<h2>Part A: Disk Scheduling</h2>
+
+<label>Disk Size (0 to N-1)</label>
+<input type="number" id="diskSize" value="200">
+
+<label>Initial Head</label>
+<input type="number" id="head" value="50">
+
+<label>Request Queue</label>
+<input type="text" id="queue" value="82,170,43,140,24,16,190">
+
+<label>Algorithm</label>
+<select id="algorithm">
+<option>FCFS</option>
+<option>SSTF</option>
+<option>SCAN</option>
+<option>C-SCAN</option>
+<option>LOOK</option>
+</select>
+
+<label>Direction</label>
+<select id="direction">
+<option value="right">Right</option>
+<option value="left">Left</option>
+</select>
+
+<br>
+<button onclick="runDisk()">Run Algorithm</button>
+<button onclick="compareDisk()">Compare All</button>
+
+<div class="result" id="diskResult">Results will appear here.</div>
+
+<canvas id="diskChart" height="230"></canvas>
+
+<p id="steps">Step: 0</p>
+<button onclick="previousStep()">Previous</button>
+<button onclick="nextStep()">Next</button>
+<button onclick="autoPlay()">Auto Play</button>
+</div>
+
+<!-- CPU SCHEDULING -->
+<div class="card">
+<h2>Part B: CPU Scheduling</h2>
+
+<label>Algorithm</label>
+<select id="cpuAlgorithm">
+<option value="FCFS">FCFS</option>
+<option value="SJF">SJF (Non-preemptive)</option>
+</select>
+
+<p>Enter process details:</p>
+<input id="pid" placeholder="Process ID (P1)">
+<input type="number" id="arrival" placeholder="Arrival Time">
+<input type="number" id="burst" placeholder="Burst Time">
+
+<button onclick="addProcess()">Add Process</button>
+<button onclick="runCPU()">Run CPU Scheduling</button>
+
+<div id="processList" class="result">No processes added.</div>
+<div id="cpuResult" class="result">CPU results will appear here.</div>
+<div id="gantt"></div>
+</div>
+
+</div>
+
+<script>
+
+// DISK SCHEDULING
+
+let currentSteps = [];
+let currentStep = 0;
+let timer = null;
+
+function getDiskData() {
+    let size = Number(document.getElementById("diskSize").value);
+    let head = Number(document.getElementById("head").value);
+    let queue = document.getElementById("queue").value
+        .split(",").map(x => Number(x.trim()));
+
+    if (!Number.isInteger(size) || size < 2 ||
+        !Number.isInteger(head) || head < 0 || head >= size ||
+        queue.length === 0 ||
+        queue.some(x => !Number.isInteger(x) || x < 0 || x >= size)) {
+        alert("Enter valid disk size, head position and requests!");
+        return null;
+    }
+
+    return {size, head, queue};
+}
+
+function calculateDisk(name, head, queue, size, direction) {
+    let sequence = [head];
+    let remaining = [...queue];
+    let movement = 0;
+    let current = head;
+
+    function moveTo(x) {
+        movement += Math.abs(current - x);
+        current = x;
+        sequence.push(x);
+    }
+
+    if (name === "FCFS") {
+        remaining.forEach(moveTo);
+    }
+
+    if (name === "SSTF") {
+        while (remaining.length) {
+            remaining.sort((a,b) =>
+                Math.abs(a-current) - Math.abs(b-current));
+            let next = remaining.shift();
+            moveTo(next);
+        }
+    }
+
+    if (name === "SCAN" || name === "C-SCAN" || name === "LOOK") {
+        let left = remaining.filter(x => x < head).sort((a,b) => b-a);
+        let right = remaining.filter(x => x >= head).sort((a,b) => a-b);
+
+        if (direction === "right") {
+            right.forEach(moveTo);
+
+            if (name === "SCAN") {
+                moveTo(size - 1);
+                left.forEach(moveTo);
+            }
+
+            if (name === "LOOK") {
+                left.forEach(moveTo);
+            }
+
+            if (name === "C-SCAN") {
+                if (current !== size-1) moveTo(size-1);
+                moveTo(0);
+                left.reverse().forEach(moveTo);
+            }
+        } else {
+            left.forEach(moveTo);
+
+            if (name === "SCAN") {
+                moveTo(0);
+                right.forEach(moveTo);
+            }
+
+            if (name === "LOOK") {
+                right.reverse().forEach(moveTo);
+            }
+
+            if (name === "C-SCAN") {
+                if (current !== 0) moveTo(0);
+                moveTo(size-1);
+                right.reverse().forEach(moveTo);
+            }
+        }
+    }
+
+    return {sequence, movement};
+}
+
+function runDisk() {
+    clearInterval(timer);
+    let d = getDiskData();
+    if (!d) return;
+
+    let name = document.getElementById("algorithm").value;
+    let direction = document.getElementById("direction").value;
+
+    let result = calculateDisk(name,d.head,d.queue,d.size,direction);
+
+    currentSteps = result.sequence;
+    currentStep = 0;
+
+    document.getElementById("diskResult").innerHTML =
+        "<b>Algorithm:</b> "+name+
+        "<br><b>Service Sequence:</b> "+result.sequence.join(" → ")+
+        "<br><b>Total Head Movement:</b> "+result.movement+" cylinders";
+
+    drawDisk();
+}
+
+function drawDisk() {
+    let canvas = document.getElementById("diskChart");
+    let ctx = canvas.getContext("2d");
+    let w = canvas.width = canvas.clientWidth * 2;
+    let h = canvas.height = 460;
+
+    ctx.clearRect(0,0,w,h);
+
+    if (!currentSteps.length) return;
+
+    let max = Math.max(...currentSteps,1);
+    let xGap = (w-100) / Math.max(currentSteps.length-1,1);
+
+    ctx.strokeStyle = "#78aaa5";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+
+    currentSteps.forEach((v,i) => {
+        let x = 50+i*xGap;
+        let y = h-40-(v/max)*(h-90);
+        if (i===0) ctx.moveTo(x,y);
+        else if (i <= currentStep) ctx.lineTo(x,y);
+    });
+
+    ctx.stroke();
+
+    currentSteps.forEach((v,i) => {
+        let x = 50+i*xGap;
+        let y = h-40-(v/max)*(h-90);
+
+        ctx.fillStyle = i<=currentStep ? "#e58d91" : "#a9caca";
+        ctx.beginPath();
+        ctx.arc(x,y,9,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.fillStyle = "#34495e";
+        ctx.font = "22px Arial";
+        ctx.fillText(v,x-10,y-15);
+        ctx.fillText(i,x-5,h-10);
+    });
+
+    document.getElementById("steps").innerText =
+        "Step: "+currentStep+" / "+(currentSteps.length-1)+
+        " | Head: "+currentSteps[currentStep];
+}
+
+function nextStep() {
+    if (currentStep < currentSteps.length-1) {
+        currentStep++;
+        drawDisk();
+    }
+}
+
+function previousStep() {
+    if (currentStep > 0) {
+        currentStep--;
+        drawDisk();
+    }
+}
+
+function autoPlay() {
+    if (!currentSteps.length) return;
+    clearInterval(timer);
+    if (currentStep >= currentSteps.length-1) currentStep=0;
+
+    timer = setInterval(() => {
+        if (currentStep < currentSteps.length-1) {
+            currentStep++;
+            drawDisk();
+        } else {
+            clearInterval(timer);
+        }
+    },800);
+}
+
+function compareDisk() {
+    let d = getDiskData();
+    if (!d) return;
+
+    let names = ["FCFS","SSTF","SCAN","C-SCAN","LOOK"];
+    let html = "<h3>Head Movement Comparison</h3>";
+
+    names.forEach(name => {
+        let r = calculateDisk(name,d.head,d.queue,d.size,
+            document.getElementById("direction").value);
+
+        html += "<p>"+name+": "+r.movement+" cylinders</p>"+
+        '<div class="bar" style="width:'+
+        Math.max(2,r.movement/Math.max(...names.map(n =>
+            calculateDisk(n,d.head,d.queue,d.size,
+            document.getElementById("direction").value).movement),1)*100)+
+        '%">'+r.movement+'</div>';
+    });
+
+    document.getElementById("diskResult").innerHTML = html;
+}
+
+// CPU SCHEDULING
+
+let processes = [];
+
+function addProcess() {
+    let id = document.getElementById("pid").value.trim();
+    let arrival = Number(document.getElementById("arrival").value);
+    let burst = Number(document.getElementById("burst").value);
+
+    if (!id || !Number.isInteger(arrival) || arrival < 0 ||
+        !Number.isInteger(burst) || burst <= 0 ||
+        processes.some(p => p.id === id)) {
+        alert("Enter a unique process ID, valid arrival and burst time.");
+        return;
+    }
+
+    processes.push({id,arrival,burst});
+    document.getElementById("processList").innerHTML =
+        processes.map(p => p.id+" | Arrival: "+p.arrival+
+        " | Burst: "+p.burst).join("<br>");
+}
+
+function runCPU() {
+    if (!processes.length) {
+        alert("Add at least one process!");
+        return;
+    }
+
+    let list = processes.map(p => ({...p}));
+    let algorithm = document.getElementById("cpuAlgorithm").value;
+    let time = 0;
+    let completed = [];
+
+    while (list.length) {
+        let available = list.filter(p => p.arrival <= time);
+
+        if (!available.length) {
+            time = Math.min(...list.map(p => p.arrival));
+            available = list.filter(p => p.arrival <= time);
+        }
+
+        if (algorithm === "FCFS") {
+            available.sort((a,b) => a.arrival-b.arrival);
+        } else {
+            available.sort((a,b) =>
+                a.burst-b.burst || a.arrival-b.arrival);
+        }
+
+        let p = available[0];
+        let start = time;
+        time += p.burst;
+
+        p.completion = time;
+        p.turnaround = p.completion-p.arrival;
+        p.waiting = p.turnaround-p.burst;
+        p.start = start;
+
+        completed.push(p);
+        list.splice(list.findIndex(x => x.id === p.id),1);
+    }
+
+    let avgWT = completed.reduce((s,p)=>s+p.waiting,0)/completed.length;
+    let avgTAT = completed.reduce((s,p)=>s+p.turnaround,0)/completed.length;
+
+    let html = "<h3>CPU Scheduling Results</h3>";
+    html += "<table><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Waiting</th><th>Turnaround</th></tr>";
+
+    completed.forEach(p => {
+        html += "<tr><td>"+p.id+"</td><td>"+p.arrival+
+        "</td><td>"+p.burst+"</td><td>"+p.completion+
+        "</td><td>"+p.waiting+"</td><td>"+p.turnaround+"</td></tr>";
+    });
+
+    html += "</table><p>Average Waiting Time: "+avgWT.toFixed(2)+
+        "</p><p>Average Turnaround Time: "+avgTAT.toFixed(2)+"</p>";
+
+    document.getElementById("cpuResult").innerHTML = html;
+
+    let gantt = "<h3>Gantt Chart</h3><div>";
+    completed.forEach(p => {
+        gantt += '<div class="process" style="min-width:'+
+        Math.max(55,p.burst*35)+'px"> '+p.id+
+        '<br>'+p.start+' - '+p.completion+'</div>';
+    });
+    gantt += "</div>";
+
+    document.getElementById("gantt").innerHTML = gantt;
+}
+</script>
+
+</body>
+</html>
